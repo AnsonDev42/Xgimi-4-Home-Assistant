@@ -15,6 +15,7 @@ from .const import (
     BLE_POWER_ON_REPEAT_DELAY,
     BLE_SERVICE_UUID,
     COMMAND_PORT,
+    PING_TIMEOUT,
     normalize_manufacturer_data,
 )
 
@@ -111,6 +112,27 @@ class XgimiApi:
             await writer.wait_closed()
             return True
         except (ConnectionRefusedError, TimeoutError, OSError):
+            return await self.async_check_ping()
+
+    async def async_check_ping(self):
+        """Return true if the projector responds to a short ICMP ping."""
+        proc = None
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ping",
+                "-c",
+                "1",
+                "-W",
+                str(PING_TIMEOUT),
+                self.ip,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            return await asyncio.wait_for(proc.wait(), timeout=PING_TIMEOUT + 1) == 0
+        except (FileNotFoundError, TimeoutError, OSError):
+            if proc and proc.returncode is None:
+                proc.kill()
+                await proc.wait()
             return False
 
     async def async_ble_power_on(
