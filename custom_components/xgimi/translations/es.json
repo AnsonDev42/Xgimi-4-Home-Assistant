@@ -13,6 +13,7 @@
     },
     "error": {
       "invalid_host": "Nombre del host o dirección IP inválidos",
+      "invalid_token": "El token BLE debe ser un valor hexadecimal con longitud par",
       "cannot_connect": "Ha fallado la conexión"
     },
     "abort": {

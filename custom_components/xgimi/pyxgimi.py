@@ -1,53 +1,92 @@
-import asyncudp
 import asyncio
-from bluez_peripheral.util import get_message_bus
+import logging
+from time import monotonic
+
+import asyncudp
 from bluez_peripheral.advert import Advertisement
-from time import time
+from bluez_peripheral.util import get_message_bus
+
+from .const import (
+    ADVANCE_PORT,
+    ALIVE_PORT,
+    BLE_ADVERTISEMENT_TIMEOUT,
+    BLE_COMPANY_ID,
+    BLE_POWER_ON_REPEATS,
+    BLE_POWER_ON_REPEAT_DELAY,
+    BLE_SERVICE_UUID,
+    COMMAND_PORT,
+    normalize_manufacturer_data,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+_COMMANDS = {
+    "ok": "KEYPRESSES:49",
+    "play": "KEYPRESSES:49",
+    "pause": "KEYPRESSES:49",
+    "power": "KEYPRESSES:116",
+    "back": "KEYPRESSES:48",
+    "home": "KEYPRESSES:35",
+    "menu": "KEYPRESSES:139",
+    "right": "KEYPRESSES:37",
+    "left": "KEYPRESSES:50",
+    "up": "KEYPRESSES:36",
+    "down": "KEYPRESSES:38",
+    "volumedown": "KEYPRESSES:114",
+    "volumeup": "KEYPRESSES:115",
+    "poweroff": "KEYPRESSES:30",
+    "volumemute": "KEYPRESSES:113",
+}
+
+_ADVANCE_COMMANDS = {
+    "autofocus",
+    "autofocus_new",
+    "manual_focus_left",
+    "manual_focus_right",
+    "motor_left_overstep",
+    "motor_left_start",
+    "motor_right_overstep",
+    "motor_right_start",
+    "motor_stop",
+    "shortcut_setting",
+    "choose_source",
+    "hibernate",
+    "xmusic",
+}
+
+_ADVANCE_COMMAND_TEMPLATE = str(
+    {
+        "action": 20000,
+        "controlCmd": {
+            "data": "command_holder",
+            "delayTime": 0,
+            "mode": 5,
+            "time": 0,
+            "type": 0,
+        },
+        "msgid": "2",
+    }
+)
 
 
 class XgimiApi:
-    def __init__(self, ip, command_port, advance_port, alive_port, manufacturer_data) -> None:
+    def __init__(
+        self,
+        ip,
+        command_port=COMMAND_PORT,
+        advance_port=ADVANCE_PORT,
+        alive_port=ALIVE_PORT,
+        manufacturer_data="",
+    ) -> None:
         self.ip = ip
         self.command_port = command_port  # 16735
         self.advance_port = advance_port  # 16750
         self.alive_port = alive_port  # 554
-        self.manufacturer_data = manufacturer_data
+        self.manufacturer_data = normalize_manufacturer_data(manufacturer_data)
         self._is_on = False
-        self.last_on = time()
-        self.last_off = time()
-
-        self._command_dict = {
-            "ok": "KEYPRESSES:49",
-            "play": "KEYPRESSES:49",
-            "pause": "KEYPRESSES:49",
-            "power": "KEYPRESSES:116",
-            "back": "KEYPRESSES:48",
-            "home": "KEYPRESSES:35",
-            "menu": "KEYPRESSES:139",
-            "right": "KEYPRESSES:37",
-            "left": "KEYPRESSES:50",
-            "up": "KEYPRESSES:36",
-            "down": "KEYPRESSES:38",
-            "volumedown": "KEYPRESSES:114",
-            "volumeup": "KEYPRESSES:115",
-            "poweroff": "KEYPRESSES:30",
-            "volumemute": "KEYPRESSES:113",
-            "autofocus": "KEYPRESSES:2099",
-            "autofocus_new": "KEYPRESSES:2103",
-            "manual_focus_left": "KEYPRESSES:2097",
-            "manual_focus_right": "KEYPRESSES:2098",
-            "motor_left_overstep": "KEYPRESSES:2095",
-            "motor_left_start": "KEYPRESSES:2092",
-            "motor_right_overstep": "KEYPRESSES:2096",
-            "motor_right_start": "KEYPRESSES:2093",
-            "motor_stop": "KEYPRESSES:2101",
-            "shortcut_setting": "KEYPRESSES:2094",
-            "choose_source": "KEYPRESSES:2102",
-            "hibernate": "KEYPRESSES:2106",
-            "xmusic": "KEYPRESSES:2108",
-        }
-        self._advance_command = str({"action": 20000, "controlCmd": {"data": "command_holder",
-                                    "delayTime": 0, "mode": 5, "time": 0, "type": 0}, "msgid": "2"})
+        self.last_on = monotonic()
+        self.last_off = monotonic()
+        self._ble_lock = asyncio.Lock()
 
     @property
     def is_on(self) -> bool:
@@ -55,9 +94,9 @@ class XgimiApi:
         return self._is_on
 
     async def async_fetch_data(self):
-        if time() - self.last_on < 30:
+        if monotonic() - self.last_on < 30:
             self._is_on = True
-        elif time() - self.last_off < 30:
+        elif monotonic() - self.last_off < 30:
             self._is_on = False
         else:
             alive = await self.async_check_alive()
@@ -65,51 +104,89 @@ class XgimiApi:
 
     async def async_check_alive(self):
         try:
-            _, writer = await asyncio.open_connection(
-                self.ip, self.alive_port)
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(self.ip, self.alive_port), timeout=2
+            )
             writer.close()
             await writer.wait_closed()
             return True
-        except ConnectionRefusedError:
-            return False
-        except Exception:
+        except (ConnectionRefusedError, TimeoutError, OSError):
             return False
 
-    async def async_ble_power_on(self, manufacturer_data: str, company_id: int = 0x0046, service_uuid: str = "1812"):
+    async def async_ble_power_on(
+        self,
+        manufacturer_data: str,
+        company_id: int = BLE_COMPANY_ID,
+        service_uuid: str = BLE_SERVICE_UUID,
+    ):
         bus = await get_message_bus()
         advert = Advertisement(
             localName="Bluetooth 4.0 RC",
             serviceUUIDs=[service_uuid],
             manufacturerData={company_id: bytes.fromhex(manufacturer_data)},
-            timeout=1,
-            duration=1000,
+            timeout=BLE_ADVERTISEMENT_TIMEOUT,
+            duration=BLE_ADVERTISEMENT_TIMEOUT,
             appearance=961,
         )
-        await advert.register(bus)
+        try:
+            await advert.register(bus)
+            await asyncio.sleep(BLE_ADVERTISEMENT_TIMEOUT + 0.1)
+        finally:
+            bus.disconnect()
 
-    async def async_robust_ble_power_on(self, manufacturer_data: str, company_id: int = 0x0046, service_uuid: str = "1812"):
-        for i in range(10):
-            await self.async_ble_power_on(manufacturer_data, company_id, service_uuid)
-            await asyncio.sleep(1)
+    async def async_robust_ble_power_on(
+        self,
+        manufacturer_data: str,
+        company_id: int = BLE_COMPANY_ID,
+        service_uuid: str = BLE_SERVICE_UUID,
+    ):
+        succeeded = False
+        last_error: Exception | None = None
+        async with self._ble_lock:
+            for attempt in range(BLE_POWER_ON_REPEATS):
+                try:
+                    await self.async_ble_power_on(
+                        manufacturer_data, company_id, service_uuid
+                    )
+                    succeeded = True
+                except Exception as err:  # noqa: BLE001
+                    last_error = err
+                    _LOGGER.warning(
+                        "XGIMI BLE power-on advertisement attempt %s/%s failed: %s",
+                        attempt + 1,
+                        BLE_POWER_ON_REPEATS,
+                        type(err).__name__,
+                    )
+
+                if attempt + 1 < BLE_POWER_ON_REPEATS:
+                    await asyncio.sleep(BLE_POWER_ON_REPEAT_DELAY)
+
+        if not succeeded and last_error is not None:
+            raise last_error
+
+    async def _send_udp(self, port: int, message: str) -> None:
+        remote_addr = (self.ip, port)
+        sock = await asyncudp.create_socket(remote_addr=remote_addr)
+        try:
+            sock.sendto(message.encode("utf-8"))
+        finally:
+            sock.close()
 
     async def async_send_command(self, command) -> None:
         """Send a command to a device."""
-        if command in self._command_dict:
+        command = str(command).strip().lower()
+        if command in _COMMANDS:
+            msg = _COMMANDS[command]
+            await self._send_udp(self.command_port, msg)
             if command == "poweroff":
                 self._is_on = False
-                self.last_off = time()
-            msg = self._command_dict[command]
-            remote_addr = (self.ip, self.command_port)
-            sock = await asyncudp.create_socket(remote_addr=remote_addr)
-            sock.sendto(msg.encode("utf-8"))
-            sock.close()
+                self.last_off = monotonic()
         elif command == "poweron":
-            self._is_on = True
-            self.last_on = time()
             await self.async_robust_ble_power_on(self.manufacturer_data)
+            self._is_on = True
+            self.last_on = monotonic()
+        elif command in _ADVANCE_COMMANDS:
+            msg = _ADVANCE_COMMAND_TEMPLATE.replace("command_holder", command)
+            await self._send_udp(self.advance_port, msg)
         else:
-            msg = self._advance_command.replace("command_holder", command)
-            remote_addr = (self.ip, self.advance_port)
-            sock = await asyncudp.create_socket(remote_addr=remote_addr)
-            sock.sendto(msg.encode("utf-8"))
-            sock.close()
+            raise ValueError(f"Unsupported XGIMI command: {command}")

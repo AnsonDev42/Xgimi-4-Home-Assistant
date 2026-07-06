@@ -10,6 +10,7 @@ from homeassistant.util.network import is_host_valid
 
 from .const import (
     DOMAIN,
+    normalize_manufacturer_data,
 )
 
 
@@ -22,15 +23,27 @@ class XgimiConfigFLow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            host = user_input[CONF_HOST]
-            name = user_input[CONF_NAME]
+            host = user_input[CONF_HOST].strip()
+            name = user_input[CONF_NAME].strip()
             token = user_input[CONF_TOKEN]
             if not is_host_valid(host):
                 errors[CONF_HOST] = "invalid_host"
             else:
-                await self.async_set_unique_id(f"{name}-{token}")
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=user_input[CONF_NAME], data=user_input)
+                try:
+                    token = normalize_manufacturer_data(token)
+                except ValueError:
+                    errors[CONF_TOKEN] = "invalid_token"
+                else:
+                    await self.async_set_unique_id(f"xgimi-{host.lower()}")
+                    self._abort_if_unique_id_configured()
+                    return self.async_create_entry(
+                        title=name,
+                        data={
+                            CONF_NAME: name,
+                            CONF_HOST: host,
+                            CONF_TOKEN: token,
+                        },
+                    )
         else:
             user_input = {}
 

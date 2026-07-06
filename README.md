@@ -14,7 +14,7 @@ Please give me a star :star_struck: if you like it.
 1. Install [HACS](https://hacs.xyz/) if you do not have that already
 2. In the Home Assitant HACS Tab, click on the three dots at the top right
 3. Choose `Custom repositories`
-4. Paste `https://github.com/manymuch/Xgimi-4-Home-Assistant/` to the repository field, choose the `Integration` category and click `ADD`
+4. Paste `https://github.com/AnsonDev42/Xgimi-4-Home-Assistant/` to the repository field, choose the `Integration` category and click `ADD`
 5. Close the dialog
 6. Disable the repository filter (hit `CLEAR` on the right of the `Filtering by Downloaded` text)
 7. Type `Xgimi` to the Search bar and select `Xgimi Projector Remote`
@@ -70,17 +70,17 @@ Example frame data:
 ```json
 {
 "name": "BLuetooth 4.0 RC",
-"address": "1C:XX:XX:XX:XX:XX",
+"address": "AA:BB:CC:DD:EE:FF",
 "rssi": -66,
 "manufacturer_data": {
     "13": "383800000001",
-    "70": "51f55a6d78e450ffffff0000000b000d"
+    "70": "00112233445566778899aabbccddeeff"
 },
 "service_data": {},
 "service_uuids": [
     "00001812-0000-1000-8000-00805f9b34fb"
 ],
-"source": "30:24:XX:XX:XX:XX",
+"source": "11:22:33:44:55:66",
 "connectable": true,
 "time": 1761087659.0729098,
 "tx_power": null,
@@ -89,7 +89,7 @@ Example frame data:
 ```
 
 Copy the full value from the manufacturer data with ID `70` — this is the token required for integration configuration. In this example:
-``51f55a6d78e450ffffff0000000b000d``.
+``00112233445566778899aabbccddeeff``.
 
 
 ## 🏗️Setup
@@ -103,8 +103,8 @@ Copy the full value from the manufacturer data with ID `70` — this is the toke
 4. Enter your projector information, for example:
     ```bash
     name: z6x
-    host: 192.168.0.115
-    token: 51F55A6D78E450FFFFFF0000000B000D
+    host: 192.0.2.115
+    token: 00112233445566778899AABBCCDDEEFF
     ```
 
 ## 📺How to use
@@ -132,6 +132,25 @@ motor_left_overstep, motor_left_start,
 motor_right_overstep, motor_right_start, motor_stop,
 shortcut_setting, choose_source, hibernate, xmusic
 ```
+
+## Bluetooth coexistence
+
+The `poweron` command uses a short-lived BLE advertisement. All other commands use
+the projector LAN IP over UDP.
+
+This fork keeps BLE power-on conservative so it can coexist with hosts that also
+use Bluetooth for audio:
+
+- Power-on BLE advertisements are serialized, so overlapping Home Assistant
+  service calls do not compete with each other.
+- BLE advertising is limited to a small number of one-second attempts.
+- BLE failures are reported to Home Assistant instead of trying to reset the
+  host Bluetooth adapter.
+- The BLE token is normalized and validated during setup, but it is never used
+  as the entity unique ID.
+
+Do not commit real projector IP addresses, BLE tokens, Home Assistant storage
+files, or logs from your own installation to this public repository.
 
 ### Dashboard example
 See [tv-card-example.yaml](assets/tv-card-example.yaml) for a dashboard example using [tv-card](https://github.com/marrobHD/tv-card)  

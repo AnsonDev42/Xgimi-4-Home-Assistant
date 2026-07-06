@@ -1,18 +1,15 @@
 """Support for the Xgimi Projector."""
 
 from collections.abc import Iterable
+
+from homeassistant.components.remote import RemoteEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .const import ALIVE_PORT, ADVANCE_PORT, COMMAND_PORT, DOMAIN
 from .pyxgimi import XgimiApi
-
-
-from homeassistant.components.remote import (
-    RemoteEntity,
-)
-
-from .const import DOMAIN
 
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
@@ -22,10 +19,15 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     host = config.get(CONF_HOST)
     name = config.get(CONF_NAME)
     token = config.get(CONF_TOKEN)
-    unique_id = f"{name}-{token}"
+    unique_id = f"xgimi-{host}"
 
-    xgimi_api = XgimiApi(ip=host, command_port=16735, advance_port=16750, alive_port=554,
-                         manufacturer_data=token)
+    xgimi_api = XgimiApi(
+        ip=host,
+        command_port=COMMAND_PORT,
+        advance_port=ADVANCE_PORT,
+        alive_port=ALIVE_PORT,
+        manufacturer_data=token,
+    )
     async_add_entities([XgimiRemote(xgimi_api, name, unique_id)])
 
 
@@ -42,8 +44,13 @@ async def async_setup_entry(
     unique_id = config_entry.unique_id
     assert unique_id is not None
 
-    xgimi_api = XgimiApi(ip=host, command_port=16735, advance_port=16750, alive_port=554,
-                         manufacturer_data=token)
+    xgimi_api = XgimiApi(
+        ip=host,
+        command_port=COMMAND_PORT,
+        advance_port=ADVANCE_PORT,
+        alive_port=ALIVE_PORT,
+        manufacturer_data=token,
+    )
     async_add_entities([XgimiRemote(xgimi_api, name, unique_id)])
 
 
@@ -53,9 +60,9 @@ class XgimiRemote(RemoteEntity):
 
     def __init__(self, xgimi_api, name, unique_id):
         self.xgimi_api = xgimi_api
-        self._name = name
-        self._icon = "mdi:projector"
-        self._unique_id = unique_id
+        self._attr_name = name
+        self._attr_icon = "mdi:projector"
+        self._attr_unique_id = unique_id
 
     async def async_update(self):
         """Retrieve latest state."""
@@ -64,34 +71,32 @@ class XgimiRemote(RemoteEntity):
     @property
     def is_on(self):
         """Return true if remote is on."""
-        return self.xgimi_api._is_on
+        return self.xgimi_api.is_on
 
     @property
-    def name(self):
-        """Return the name of the device if any."""
-        return self._name
-
-    @property
-    def icon(self):
-        """Return the icon to use for device if any."""
-        return self._icon
-
-    @property
-    def unique_id(self):
-        """Return an unique ID."""
-        return self._unique_id
+    def device_info(self):
+        """Return device information for the projector."""
+        return {
+            "identifiers": {(DOMAIN, self.unique_id)},
+            "manufacturer": "XGIMI",
+            "name": self.name,
+        }
 
     async def async_turn_on(self, **kwargs):
         """Turn the Xgimi Projector On."""
-        # Do the turning on.
         await self.xgimi_api.async_send_command("poweron")
+        self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs):
         """Turn the Xgimi Projector Off."""
-        # Do the turning off.
         await self.xgimi_api.async_send_command("poweroff")
+        self.async_write_ha_state()
 
-    async def async_send_command(self, command: Iterable[str], **kwargs) -> None:
+    async def async_send_command(
+        self, command: Iterable[str] | str, **kwargs
+    ) -> None:
         """Send a command to one of the devices."""
-        for single_command in command:
+        commands = [command] if isinstance(command, str) else command
+        for single_command in commands:
             await self.xgimi_api.async_send_command(single_command)
+        self.async_write_ha_state()
