@@ -107,6 +107,14 @@ Copy the full value from the manufacturer data with ID `70` — this is the toke
     token: 00112233445566778899AABBCCDDEEFF
     ```
 
+### Local `.env` helper
+
+For local deployment or setup automation, copy `.env.example` to `.env` and fill
+in your own Home Assistant URL, credentials, projector IP, and BLE token.
+
+`.env` is ignored by Git. Do not commit real Home Assistant credentials,
+projector IP addresses, or BLE tokens to this public repository.
+
 ## 📺How to use
 The integration setup up a remote entity: e.g. `remote.z6x`.  
 Example usage of remote.send_command service:  
