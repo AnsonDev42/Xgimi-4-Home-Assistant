@@ -6,7 +6,7 @@ import re
 NAME = "Xgimi Projector Integration"
 DOMAIN = "xgimi"
 DOMAIN_DATA = f"{DOMAIN}_data"
-VERSION = "0.0.9"
+VERSION = "0.0.10"
 
 COMMAND_PORT = 16735
 ADVANCE_PORT = 16750

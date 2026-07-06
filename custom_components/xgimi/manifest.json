@@ -1,7 +1,7 @@
 {
   "domain": "xgimi",
   "name": "Xgimi Projector Remote",
-  "version": "v0.0.9",
+  "version": "v0.0.10",
   "config_flow": true,
   "integration_type": "device",
   "documentation": "https://github.com/AnsonDev42/Xgimi-4-Home-Assistant",

@@ -1,6 +1,7 @@
 """Xgimi Projector Integration"""
 from __future__ import annotations
 
+import logging
 from typing import Final
 
 from homeassistant.config_entries import ConfigEntry
@@ -9,12 +10,16 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 
+_LOGGER = logging.getLogger(__name__)
+
 PLATFORMS: Final[list[Platform]] = [
+    Platform.MEDIA_PLAYER,
     Platform.REMOTE,
 ]
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up a config entry."""
+    _LOGGER.debug("Setting up XGIMI platforms: %s", PLATFORMS)
     hass.data.setdefault(DOMAIN, {})
     config = {}
     for k in [CONF_HOST, CONF_TOKEN, CONF_NAME]:
@@ -23,6 +28,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     hass.data[DOMAIN][config_entry.entry_id] = config
 
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+    _LOGGER.debug("Finished setting up XGIMI platforms")
 
     return True
 
